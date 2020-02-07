@@ -169,7 +169,7 @@ class CCXTBroker(with_metaclass(MetaCCXTBroker, BrokerBase)):
             return None
 
     def notify(self, order):
-        self.notifs.put(order)
+        self.notifs.put(order.clone())
 
     def getposition(self, data, clone=True):
         # return self.o.getposition(data._dataname, clone=clone)
