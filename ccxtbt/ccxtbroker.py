@@ -23,8 +23,9 @@ from __future__ import (absolute_import, division, print_function,
 
 import collections
 import json
+from datetime import datetime
 
-from backtrader import BrokerBase, OrderBase, Order
+from backtrader import BrokerBase, OrderBase, Order, date2num
 from backtrader.position import Position
 from backtrader.utils.py3 import queue, with_metaclass
 
@@ -199,8 +200,38 @@ class CCXTBroker(with_metaclass(MetaCCXTBroker, BrokerBase)):
 
             # Check if the order is closed
             if ccxt_order[self.mappings['closed_order']['key']] == self.mappings['closed_order']['value']:
-                pos = self.getposition(o_order.data, clone=False)
-                pos.update(o_order.size, o_order.price)
+                position = self.getposition(o_order.data, clone=False)
+                pprice_orig = position.price
+                size = ccxt_order['amount'] if o_order.isbuy() else -ccxt_order['amount']
+                price = ccxt_order['average']
+                # use pseudoupdate and let the updateportfolio do the real update?
+                psize, pprice, opened, closed = position.update(size, price)
+
+                # split commission between closed and opened
+                comminfo = o_order.comminfo
+                comm = comminfo.getcommission(size, price)
+                closedcomm = comm * closed / size
+                openedcomm = comm - closedcomm
+
+                closedvalue = comminfo.getoperationcost(closed, pprice_orig)
+                openedvalue = comminfo.getoperationcost(opened, price)
+
+                # The internal broker calc should yield the same result
+                pnl = comminfo.profitandloss(-closed, pprice_orig, price)
+
+                # Use the actual time provided by the execution object
+                dt = date2num(datetime.utcfromtimestamp(ccxt_order['timestamp'] / 1000))
+
+                # Need to simulate a margin, but it plays no role, because it is
+                # controlled by a real broker. Let's set the price of the item
+                margin = o_order.data.close[0]
+
+                o_order.execute(dt, size, price,
+                              closed, closedvalue, closedcomm,
+                              opened, openedvalue, openedcomm,
+                              margin, pnl,
+                              psize, pprice)
+
                 o_order.completed()
                 self.notify(o_order)
                 self.open_orders.remove(o_order)
@@ -218,6 +249,7 @@ class CCXTBroker(with_metaclass(MetaCCXTBroker, BrokerBase)):
 
         order = CCXTOrder(owner, data, _order)
         order.price = ret_ord['price']
+        order.addcomminfo(self.getcommissioninfo(data))
         self.open_orders.append(order)
 
         self.notify(order)
