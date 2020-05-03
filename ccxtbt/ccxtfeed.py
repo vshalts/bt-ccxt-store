@@ -136,7 +136,9 @@ class CCXTFeed(with_metaclass(MetaCCXTFeed, DataBase)):
 
         if fromdate:
             since = int((fromdate - datetime(1970, 1, 1)).total_seconds() * 1000)
+            up_to = int(((datetime.utcnow() - datetime(1970, 1, 1)).total_seconds() - 60) * 1000)
         else:
+            up_to = None
             if self._last_ts > 0:
                 since = self._last_ts
             else:
@@ -145,8 +147,6 @@ class CCXTFeed(with_metaclass(MetaCCXTFeed, DataBase)):
         limit = self.p.ohlcv_limit
 
         while True:
-            dlen = len(self._data)
-
             if self.p.debug:
                 # TESTING
                 since_dt = datetime.utcfromtimestamp(since // 1000) if since is not None else 'NA'
@@ -195,7 +195,9 @@ class CCXTFeed(with_metaclass(MetaCCXTFeed, DataBase)):
                     self._data.append(ohlcv)
                     self._last_ts = tstamp
 
-            if dlen == len(self._data):
+            if up_to and 0 < self._last_ts < up_to:
+                since = self._last_ts
+            else:
                 break
 
     def _load_ticks(self):
